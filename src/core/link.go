@@ -40,6 +40,7 @@ type links struct {
 	quic  *linkQUIC  // QUIC interface support
 	ws    *linkWS    // WS interface support
 	wss   *linkWSS   // WSS interface support
+	hy2   *linkHy2   // Hysteria v2 interface support
 	// _links can only be modified safely from within the links actor
 	_links     map[linkInfo]*link // *link is nil if connection in progress
 	_listeners map[*Listener]context.CancelFunc
@@ -96,6 +97,7 @@ func (l *links) init(c *Core) error {
 	l.quic = l.newLinkQUIC()
 	l.ws = l.newLinkWS()
 	l.wss = l.newLinkWSS()
+	l.hy2 = l.newLinkHy2()
 	l._links = make(map[linkInfo]*link)
 	l._listeners = make(map[*Listener]context.CancelFunc)
 
@@ -444,6 +446,8 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 		protocol = l.ws
 	case "wss":
 		protocol = l.wss
+	case "hy2", "hy2s":
+		protocol = l.hy2
 	default:
 		ctxcancel()
 		return nil, ErrLinkUnrecognisedSchema
@@ -595,6 +599,8 @@ func (l *links) connect(ctx context.Context, u *url.URL, info linkInfo, options 
 		dialer = l.ws
 	case "wss":
 		dialer = l.wss
+	case "hy2", "hy2s":
+		dialer = l.hy2
 	default:
 		return nil, ErrLinkUnrecognisedSchema
 	}

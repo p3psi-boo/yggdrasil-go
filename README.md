@@ -10,6 +10,8 @@ allows pretty much any IPv6-capable application to communicate securely with
 other Yggdrasil nodes. Yggdrasil does not require you to have IPv6 Internet
 connectivity - it also works over IPv4.
 
+It supports a variety of underlying transport protocols for peering, including TCP, TLS, QUIC, WebSockets, and now **Hysteria v2**. Hysteria v2 support is available using `hy2://` or `hy2s://` (for TLS-secured Hysteria connections) schemes. Required parameters typically include the server address and port. A password should be provided in the URI (e.g., `hy2://yourpassword@host:port`). Other options like SNI for TLS can be specified with `?sni=your.host.name`. For more details on configuration, see the documentation website.
+
 ## Supported Platforms
 
 Yggdrasil works on a number of platforms, including Linux, macOS, Ubiquiti
