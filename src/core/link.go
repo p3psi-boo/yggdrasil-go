@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -40,6 +41,11 @@ type links struct {
 	quic  *linkQUIC  // QUIC interface support
 	ws    *linkWS    // WS interface support
 	wss   *linkWSS   // WSS interface support
+
+	fakeHTTPRawInjector      fakeHTTPInjector
+	fakeHTTPFallbackInjector fakeHTTPInjector
+	fakeHTTPWarned           sync.Map
+
 	// _links can only be modified safely from within the links actor
 	_links     map[linkInfo]*link // *link is nil if connection in progress
 	_listeners map[*Listener]context.CancelFunc
@@ -73,6 +79,7 @@ type linkOptions struct {
 	pinnedEd25519Keys map[keyArray]struct{}
 	priority          uint8
 	tlsSNI            string
+	fakeHTTPHost      string
 	password          []byte
 	maxBackoff        time.Duration
 }
@@ -96,6 +103,8 @@ func (l *links) init(c *Core) error {
 	l.quic = l.newLinkQUIC()
 	l.ws = l.newLinkWS()
 	l.wss = l.newLinkWSS()
+	l.fakeHTTPRawInjector = newFakeHTTPRawInjector()
+	l.fakeHTTPFallbackInjector = newFakeHTTPFallbackInjector(l)
 	l._links = make(map[linkInfo]*link)
 	l._listeners = make(map[*Listener]context.CancelFunc)
 
@@ -211,6 +220,13 @@ func (l *links) add(u *url.URL, sintf string, linkType linkType) error {
 				return
 			}
 			options.maxBackoff = d
+		}
+		if p := u.Query().Get("fakehttp"); p != "" {
+			if host, ok := parseFakeHTTPHost(p); ok {
+				options.fakeHTTPHost = host
+			} else {
+				l.core.log.Warnf("Ignoring invalid fakehttp query value for peer %q", u.Redacted())
+			}
 		}
 		// SNI headers must contain hostnames and not IP addresses, so we must make sure
 		// that we do not populate the SNI with an IP literal. We do this by splitting
@@ -481,6 +497,13 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 		Cancel:   cancel,
 	}
 
+	if p := u.Query().Get("fakehttp"); p != "" {
+		l.core.log.Warnf("Ignoring fakehttp query on listener %q", u.Redacted())
+		if _, ok := parseFakeHTTPHost(p); !ok {
+			l.core.log.Warnf("Ignoring invalid fakehttp query value on listener %q", u.Redacted())
+		}
+	}
+
 	var options linkOptions
 	if p := u.Query().Get("priority"); p != "" {
 		pi, err := strconv.ParseUint(p, 10, 8)
@@ -594,6 +617,7 @@ func (l *links) listen(u *url.URL, sintf string, local bool) (*Listener, error) 
 }
 
 func (l *links) connect(ctx context.Context, u *url.URL, info linkInfo, options linkOptions) (net.Conn, error) {
+	l.maybeInjectFakeHTTP(ctx, u, info, options)
 	dialer, err := l.dialerFor(u)
 	if err != nil {
 		return nil, err
